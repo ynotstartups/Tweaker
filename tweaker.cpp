@@ -20,12 +20,19 @@ class MyVertex  : public vcg::Vertex< MyUsedTypes,
     vcg::vertex::BitFlags  >{};
 
 class MyFace    : public vcg::Face< MyUsedTypes,
-    vcg::face::FFAdj,
     vcg::face::Normal3f,
-    vcg::face::VertexRef,
-    vcg::face::Mark,
-    vcg::face::BitFlags > {};
+    vcg::face::VertexRef
+     > {};
 class MyMesh    : public vcg::tri::TriMesh< std::vector<MyVertex>, std::vector<MyFace> > {};
+
+float v[18][3] = {
+    {0, 0, -1}, {0.70710678, 0, -0.70710678}, {0, 0.70710678, -0.70710678},
+    {-0.70710678, 0, -0.70710678}, {0, -0.70710678, -0.70710678},
+    {1, 0, 0}, {0.70710678, 0.70710678, 0}, {0, 1, 0}, {-0.70710678, 0.70710678, 0},
+    {-1, 0, 0}, {-0.70710678, -0.70710678, 0}, {0, -1, 0}, {0.70710678, -0.70710678, 0},
+    {0.70710678, 0, 0.70710678}, {0, 0.70710678, 0.70710678},
+    {-0.70710678, 0, 0.70710678}, {0, -0.70710678, 0.70710678}, {0, 0, 1}
+};
 
 bool loadMesh(MyMesh & mesh, const std::string filepath) {
 
@@ -42,7 +49,28 @@ bool loadMesh(MyMesh & mesh, const std::string filepath) {
     return true;
 }
 
-struct ArrayHasher {
+float bottom_area(MyMesh & mesh,
+        MyMesh::PerFaceAttributeHandle<float> face_area,
+        float first_layer_height=0.2) {
+    vcg::tri::UpdateBounding<MyMesh>::Box(mesh);
+    float min_z = mesh.bbox.min.Z();
+    float z = min_z + first_layer_height;
+
+    float bottom_area = 0;
+    for (auto fi = mesh.face.begin(); fi!=mesh.face.end(); ++fi) {
+
+        float v0z = (*fi).V(0)->cP()[2];
+        float v1z = (*fi).V(1)->cP()[2];
+        float v2z = (*fi).V(2)->cP()[2];
+
+        if (v0z < z or v1z < z or v2z < z)
+            bottom_area += face_area[*fi];
+    }
+
+    return bottom_area;
+}
+
+struct ArrayHasher { // do it directly on point3f
     std::size_t operator() (const std::array<float, 3> & a) const {
         std::size_t h = 0;
         for (auto e : a) {
@@ -71,6 +99,9 @@ int main( int argc, char *argv[] )
     }
 
     MyMesh mesh;
+
+    MyMesh::PerFaceAttributeHandle<float> face_area = vcg::tri::Allocator<MyMesh>::GetPerFaceAttribute<float> (mesh, std::string("Area"));
+
     bool successfulLoadMesh = loadMesh(mesh, filepath);
     if (not successfulLoadMesh) {
         return 1;
@@ -84,6 +115,7 @@ int main( int argc, char *argv[] )
         // printf("normal 2 %f \n", (*fi).N()[2]);
         std::array<float, 3> test = {(*fi).N()[0], (*fi).N()[1], (*fi).N()[2]};
         const float doubleArea=DoubleArea(*fi);
+        face_area[fi] = doubleArea;
         counter[test]+=doubleArea;
     }
 
@@ -113,22 +145,24 @@ int main( int argc, char *argv[] )
     vcg::Matrix44<float> transformation_matrix;
     transformation_matrix.FromEigenMatrix(mat4);
 
-    int count = 0;
-    for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
-        count++;
-        if (count == 10) break;
-        printf("before v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
-    }
-    vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, transformation_matrix);
-
+    // int count = 0;
+    // for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
+        // count++;
+        // if (count == 10) break;
+        // printf("before v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
+    // }
+    bool update_normals = false;
+    vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, transformation_matrix, update_normals);
     std::cout << r << std::endl;
 
-    count = 0;
-    for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
-        count++;
-        if (count == 10) break;
-        printf("after v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
-    }
+    // count = 0;
+    // for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
+        // count++;
+        // if (count == 10) break;
+        // printf("after v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
+    // }
+
+    printf("bottom area %f \n", bottom_area(mesh, face_area));
 
     vcg::tri::io::ExporterSTL<MyMesh>::Save(mesh, "./out/tweaked.stl");
     return 0;
