@@ -25,7 +25,7 @@ class MyFace    : public vcg::Face< MyUsedTypes,
      > {};
 class MyMesh    : public vcg::tri::TriMesh< std::vector<MyVertex>, std::vector<MyFace> > {};
 
-float v[18][3] = {
+float v[28][3] = {
     {0, 0, -1}, {0.70710678, 0, -0.70710678}, {0, 0.70710678, -0.70710678},
     {-0.70710678, 0, -0.70710678}, {0, -0.70710678, -0.70710678},
     {1, 0, 0}, {0.70710678, 0.70710678, 0}, {0, 1, 0}, {-0.70710678, 0.70710678, 0},
@@ -130,20 +130,43 @@ int main( int argc, char *argv[] )
             }
     );
 
-    for ( auto it = top_normal.begin(); it != top_normal.end(); ++it ) {
-            printf("normal %f %f %f %f \n",it->first[0], it->first[1], it->first[2], it->second);
+    int counter = 18;
+    for ( auto it = top_normal.begin(); it != top_normal.end(); ++it,++counter ) {
+        printf("normal %f %f %f %f \n",it->first[0], it->first[1], it->first[2], it->second);
+        v[counter][0] = it->first[0];
+        v[counter][1] = it->first[1];
+        v[counter][2] = it->first[2];
     }
 
     // vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, )
 
     const Eigen::Vector3f to = {0, 0, -1};
-    const Eigen::Vector3f from = {top_normal[0].first[0], top_normal[0].first[1], top_normal[0].first[2]};
 
-    Eigen::Matrix3f r = Eigen::Quaternionf().setFromTwoVectors(from,to).toRotationMatrix();
-    Eigen::Matrix4f mat4 = Eigen::Matrix4f::Identity(); mat4.block(0,0,3,3) = r;
+    auto vertices = mesh.vert; // save the original vertices position
 
-    vcg::Matrix44<float> transformation_matrix;
-    transformation_matrix.FromEigenMatrix(mat4);
+    for ( auto counter = 0; counter < 28; ++counter ) {
+
+        const Eigen::Vector3f from = {
+            v[counter][0],
+            v[counter][1],
+            v[counter][2],
+        };
+
+        Eigen::Matrix3f r = Eigen::Quaternionf().setFromTwoVectors(from,to).toRotationMatrix();
+        Eigen::Matrix4f mat4 = Eigen::Matrix4f::Identity(); mat4.block(0,0,3,3) = r;
+
+        vcg::Matrix44<float> transformation_matrix;
+        transformation_matrix.FromEigenMatrix(mat4);
+
+        bool update_normals = false;
+        vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, transformation_matrix, update_normals);
+
+        printf("bottom area %f \n", bottom_area(mesh, face_area));
+
+        mesh.vert = vertices;
+
+    }
+
 
     // int count = 0;
     // for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
@@ -151,9 +174,18 @@ int main( int argc, char *argv[] )
         // if (count == 10) break;
         // printf("before v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
     // }
-    bool update_normals = false;
-    vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, transformation_matrix, update_normals);
-    std::cout << r << std::endl;
+
+    // bool update_normals = false;
+    // vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, transformation_matrix, update_normals);
+
+    // count = 0;
+    // for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
+
+        // if (count == 10) break;
+        // printf("after v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
+    // }
+
+    // mesh.vert = vertices;
 
     // count = 0;
     // for (auto vi = mesh.vert.begin(); vi!=mesh.vert.end(); ++vi) {
@@ -162,8 +194,8 @@ int main( int argc, char *argv[] )
         // printf("after v %f %f %f\n", vi->cP()[0], vi->cP()[1], vi->cP()[2]);
     // }
 
-    printf("bottom area %f \n", bottom_area(mesh, face_area));
+    // printf("bottom area %f \n", bottom_area(mesh, face_area));
 
-    vcg::tri::io::ExporterSTL<MyMesh>::Save(mesh, "./out/tweaked.stl");
+    // vcg::tri::io::ExporterSTL<MyMesh>::Save(mesh, "./out/tweaked.stl");
     return 0;
 }
