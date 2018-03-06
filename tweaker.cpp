@@ -49,14 +49,19 @@ bool loadMesh(MyMesh & mesh, const std::string filepath) {
     return true;
 }
 
-float bottom_area(MyMesh & mesh,
+void bottom_area(MyMesh & mesh,
         MyMesh::PerFaceAttributeHandle<float> face_area,
-        float first_layer_height=0.2) {
+        float orientation_x, float orientation_y, float orientation_z,
+        std::array<float, 2> & bottom_support_area,
+        float first_layer_height=0.2
+        ) {
     vcg::tri::UpdateBounding<MyMesh>::Box(mesh);
     float min_z = mesh.bbox.min.Z();
     float z = min_z + first_layer_height;
 
-    float bottom_area = 0;
+    bottom_support_area[0] = 0;
+    bottom_support_area[1] = 0;
+    float ascent = -0.5; // np.cos(120 * np.pi / 180) -0.49999999999999978
     for (auto fi = mesh.face.begin(); fi!=mesh.face.end(); ++fi) {
 
         float v0z = (*fi).V(0)->cP()[2];
@@ -64,10 +69,12 @@ float bottom_area(MyMesh & mesh,
         float v2z = (*fi).V(2)->cP()[2];
 
         if (v0z < z or v1z < z or v2z < z)
-            bottom_area += face_area[*fi];
+            bottom_support_area[0] += face_area[*fi];
+        else {
+            if ((*fi).N()[0] * orientation_x + (*fi).N()[1] * orientation_y + (*fi).N()[2]*orientation_z < ascent)
+                bottom_support_area[1] += face_area[*fi];
+        }
     }
-
-    return bottom_area;
 }
 
 struct ArrayHasher { // do it directly on point3f
@@ -113,7 +120,14 @@ int main( int argc, char *argv[] )
         // printf("normal 0 %f ", (*fi).N()[0]);
         // printf("normal 1 %f ", (*fi).N()[1]);
         // printf("normal 2 %f \n", (*fi).N()[2]);
-        std::array<float, 3> test = {(*fi).N()[0], (*fi).N()[1], (*fi).N()[2]};
+
+        std::array<float, 3> test = {};
+
+        // round to 5 decimal places, since normal area normalized so values areless than 1
+        test[0] = floor((*fi).N()[0]*10000)/10000;
+        test[1] = floor((*fi).N()[1]*10000)/10000;
+        test[2] = floor((*fi).N()[2]*10000)/10000;
+
         const float doubleArea=DoubleArea(*fi);
         face_area[fi] = doubleArea;
         counter[test]+=doubleArea;
@@ -161,7 +175,12 @@ int main( int argc, char *argv[] )
         bool update_normals = false;
         vcg::tri::UpdatePosition<MyMesh>::Matrix(mesh, transformation_matrix, update_normals);
 
-        printf("bottom area %f \n", bottom_area(mesh, face_area));
+        std::array<float, 2> bottom_support_area = {0., 0.};
+        bottom_area(mesh, face_area,
+                v[counter][0], v[counter][1], v[counter][2],
+                bottom_support_area
+                );
+        printf("bottom area %f support area %f \n", bottom_support_area[0], bottom_support_area[1]);
 
         mesh.vert = vertices;
 
@@ -196,6 +215,6 @@ int main( int argc, char *argv[] )
 
     // printf("bottom area %f \n", bottom_area(mesh, face_area));
 
-    // vcg::tri::io::ExporterSTL<MyMesh>::Save(mesh, "./out/tweaked.stl");
+    vcg::tri::io::ExporterSTL<MyMesh>::Save(mesh, "./out/tweaked.stl");
     return 0;
 }
